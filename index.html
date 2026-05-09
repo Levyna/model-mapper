@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Model Mapper</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f5f5f5;
+    color: #111;
+    min-height: 100vh;
+    padding: 32px 16px 80px;
+  }
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  .header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  h1 { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
+  .subtitle { font-size: 13px; color: #666; margin-bottom: 28px; }
+
+  .global-row {
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.05);
+  }
+  .global-row .field { flex: 1; margin-bottom: 0; }
+  .global-row label { margin-bottom: 4px; }
+
+  .routes { display: flex; flex-direction: column; gap: 12px; }
+
+  .route-card {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 20px 24px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.05);
+    position: relative;
+  }
+  .route-card .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .route-card .card-header .route-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #111;
+  }
+  .route-card .card-header .route-badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: #666;
+    background: #f0f0f0;
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+  .delete-btn {
+    background: none;
+    border: none;
+    color: #dc2626;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background .15s;
+  }
+  .delete-btn:hover { background: #fee2e2; }
+
+  .route-row { display: flex; gap: 12px; margin-bottom: 14px; }
+  .route-row .field { flex: 1; margin-bottom: 0; }
+
+  .field { margin-bottom: 16px; }
+  label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #444;
+    margin-bottom: 6px;
+  }
+  input, select, textarea {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+    color: #111;
+    background: #fafafa;
+    transition: border-color .15s, background .15s;
+    outline: none;
+  }
+  input:focus, select:focus, textarea:focus {
+    border-color: #111;
+    background: #fff;
+  }
+  textarea { resize: vertical; min-height: 72px; }
+  .hint { font-size: 12px; color: #888; margin-top: 4px; }
+
+  .add-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 12px;
+    background: #fafafa;
+    color: #444;
+    border: 1px dashed #ccc;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+    margin-top: 4px;
+  }
+  .add-btn:hover { background: #f0f0f0; border-color: #aaa; }
+
+  .bottom-actions {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(255,255,255,.95);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid #ddd;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    z-index: 100;
+  }
+  .bottom-actions button {
+    padding: 10px 32px;
+    background: #111;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .bottom-actions button:hover { background: #333; }
+  .bottom-actions button:disabled { background: #999; cursor: not-allowed; }
+  .status { font-size: 13px; transition: opacity .3s; }
+  .status.ok { color: #16a34a; }
+  .status.err { color: #dc2626; }
+
+  .empty-hint {
+    text-align: center;
+    padding: 24px;
+    color: #888;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>Model Mapper</h1>
+  </div>
+  <p class="subtitle">多路由模型映射 — 一个实例支持任意数量的 API 自由切换</p>
+
+  <div class="global-row">
+    <div class="field">
+      <label for="port">监听端口</label>
+      <input id="port" type="number" min="1" max="65535" placeholder="3000">
+    </div>
+  </div>
+
+  <div class="routes" id="routes-container">
+    <!-- 动态生成 -->
+  </div>
+
+  <button class="add-btn" id="add-btn" onclick="addRoute()">+ 添加路由</button>
+</div>
+
+<div class="bottom-actions">
+  <button id="save-btn" onclick="save()">保存配置</button>
+  <span class="status" id="status"></span>
+</div>
+
+<script>
+let routeIdCounter = 0;
+
+function createRouteCard(route) {
+  const id = routeIdCounter++;
+  const mappedModels = (route.mapped_models || []).join('\n');
+  return `
+    <div class="route-card" id="route-${id}">
+      <div class="card-header">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="route-label">路由</span>
+          <span class="route-badge" id="badge-${id}">${route.target_model || '新路由'}</span>
+        </div>
+        <button class="delete-btn" onclick="removeRoute(${id})">删除</button>
+      </div>
+      <div class="route-row">
+        <div class="field">
+          <label>上游 URL</label>
+          <input type="url" id="upstream_url-${id}" value="${route.upstream_url || ''}" placeholder="https://api.example.com/anthropic">
+        </div>
+        <div class="field" style="flex:0 0 140px">
+          <label>协议</label>
+          <select id="protocol-${id}">
+            <option value="anthropic" ${route.protocol !== 'openai' ? 'selected' : ''}>Anthropic</option>
+            <option value="openai" ${route.protocol === 'openai' ? 'selected' : ''}>OpenAI</option>
+          </select>
+        </div>
+      </div>
+      <div class="route-row">
+        <div class="field">
+          <label>API Key / Token</label>
+          <input type="password" id="upstream_token-${id}" value="${route.upstream_token || ''}" placeholder="sk-... 或 tp-...">
+        </div>
+        <div class="field">
+          <label>目标模型</label>
+          <input type="text" id="target_model-${id}" value="${route.target_model || ''}" placeholder="gpt-5.5"
+            oninput="updateBadge(${id})">
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>映射模型（每行一个，将被替换为上方目标模型）</label>
+        <textarea id="mapped_models-${id}" placeholder="claude-opus-4-6&#10;claude-sonnet-4-6">${mappedModels}</textarea>
+      </div>
+    </div>
+  `;
+}
+
+function updateBadge(id) {
+  const badge = document.getElementById(`badge-${id}`);
+  const val = document.getElementById(`target_model-${id}`).value.trim();
+  badge.textContent = val || '新路由';
+}
+
+function addRoute(existingRoute) {
+  const container = document.getElementById('routes-container');
+  const div = document.createElement('div');
+  div.innerHTML = createRouteCard(existingRoute || {});
+  container.appendChild(div.firstElementChild);
+}
+
+function removeRoute(id) {
+  const el = document.getElementById(`route-${id}`);
+  if (el) {
+    const container = document.getElementById('routes-container');
+    container.removeChild(el);
+  }
+}
+
+async function load() {
+  const res = await fetch('/api/config');
+  const c = await res.json();
+  document.getElementById('port').value = c.port || 3000;
+
+  const container = document.getElementById('routes-container');
+  container.innerHTML = '';
+  routeIdCounter = 0;
+
+  const routes = c.routes || [];
+  if (routes.length === 0) {
+    // 兼容旧配置
+    addRoute({
+      upstream_url: c.upstream_url || '',
+      upstream_token: c.upstream_token || '',
+      protocol: c.protocol || 'anthropic',
+      target_model: c.target_model || '',
+      mapped_models: c.mapped_models || [],
+    });
+  } else {
+    routes.forEach(r => addRoute(r));
+  }
+}
+
+async function save() {
+  const btn = document.getElementById('save-btn');
+  const status = document.getElementById('status');
+  btn.disabled = true;
+  status.textContent = '';
+
+  const cards = document.querySelectorAll('.route-card');
+  const routes = [];
+
+  cards.forEach(card => {
+    const id = card.id.replace('route-', '');
+    const upstream_url = document.getElementById(`upstream_url-${id}`).value.trim();
+    const upstream_token = document.getElementById(`upstream_token-${id}`).value.trim();
+    const protocol = document.getElementById(`protocol-${id}`).value;
+    const target_model = document.getElementById(`target_model-${id}`).value.trim();
+    const mapped_models = document.getElementById(`mapped_models-${id}`).value
+      .split('\n')
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    if (upstream_url && target_model) {
+      routes.push({ upstream_url, upstream_token, protocol, target_model, mapped_models });
+    }
+  });
+
+  if (routes.length === 0) {
+    status.textContent = '请至少配置一个路由';
+    status.className = 'status err';
+    btn.disabled = false;
+    return;
+  }
+
+  const body = {
+    port: parseInt(document.getElementById('port').value, 10) || 3000,
+    routes: routes,
+  };
+
+  try {
+    const res = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      status.textContent = '已保存，重启服务后生效';
+      status.className = 'status ok';
+    } else {
+      status.textContent = '保存失败 ' + res.status;
+      status.className = 'status err';
+    }
+  } catch (e) {
+    status.textContent = '网络错误';
+    status.className = 'status err';
+  }
+
+  btn.disabled = false;
+  setTimeout(() => { status.textContent = ''; }, 4000);
+}
+
+load();
+</script>
+</body>
+</html>
