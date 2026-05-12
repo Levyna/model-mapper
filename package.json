@@ -4,11 +4,11 @@
   "description": "Claude 多模型代理 - 一键安装，同时支持 Claude Desktop 和 Office 插件",
   "main": "model-mapper.js",
   "bin": {
-    "model-mapper": "./bin/install.js"
+    "model-mapper": "./model-mapper.js"
   },
   "scripts": {
     "start": "node model-mapper.js",
-    "install": "node bin/install.js"
+    "postinstall": "node bin/postinstall.js"
   },
   "keywords": [
     "claude",
