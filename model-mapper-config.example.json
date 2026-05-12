@@ -1,0 +1,33 @@
+{
+  "port": 3000,
+  "routes": [
+    {
+      "upstream_url": "https://api.minimaxi.com/anthropic",
+      "upstream_token": "YOUR_MINIMAX_API_KEY",
+      "protocol": "anthropic",
+      "target_model": "MiniMax-M2.7",
+      "mapped_models": ["claude-sonnet-4-5"]
+    },
+    {
+      "upstream_url": "https://open.bigmodel.cn/api/anthropic",
+      "upstream_token": "YOUR_ZHIPU_API_KEY",
+      "protocol": "anthropic",
+      "target_model": "GLM-5.1",
+      "mapped_models": ["claude-opus-4-6"]
+    },
+    {
+      "upstream_url": "https://api.deepseek.com/anthropic",
+      "upstream_token": "YOUR_DEEPSEEK_API_KEY",
+      "protocol": "anthropic",
+      "target_model": "deepseek-chat",
+      "mapped_models": ["claude-sonnet-4-6"]
+    },
+    {
+      "upstream_url": "https://your-relay-address/v1",
+      "upstream_token": "YOUR_RELAY_API_KEY",
+      "protocol": "openai",
+      "target_model": "gpt-4",
+      "mapped_models": ["claude-opus-4-7"]
+    }
+  ]
+}

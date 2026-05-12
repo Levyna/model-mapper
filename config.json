@@ -6,27 +6,28 @@
       "upstream_token": "sk-cp-ev2oaYs8tl-VEyH5UO-C3AE8-Ol6VqDjfQXnZ32Fw5SvDdG6DKxs5eoz9DTFQYpRxNjOURpB8lsfFcMMoA1hKS-GA05wlBvRQzpVL0905EPzCwK0pVrdN1Q",
       "protocol": "anthropic",
       "target_model": "MiniMax-M2.7",
-      "mapped_models": [
-        "claude-haiku-4-5"
-      ]
+      "mapped_models": ["claude-sonnet-4-5"]
     },
     {
       "upstream_url": "https://open.bigmodel.cn/api/anthropic",
       "upstream_token": "3aad63841f7f4943a8082c0e4d375c8d.fvHAbdkjLawrb0Tw",
       "protocol": "anthropic",
       "target_model": "GLM-5.1",
-      "mapped_models": [
-        "claude-opus-4-6"
-      ]
+      "mapped_models": ["claude-opus-4-6"]
     },
     {
       "upstream_url": "https://api.deepseek.com/anthropic",
       "upstream_token": "sk-e1908485d8e948af9f94d7bf3c73566d",
       "protocol": "anthropic",
       "target_model": "DeepSeek-V4-Pro",
-      "mapped_models": [
-        "claude-sonnet-4-6"
-      ]
+      "mapped_models": ["claude-sonnet-4-6"]
+    },
+    {
+      "upstream_url": "https://cp0509001.soeasytunnel.com/v1",
+      "upstream_token": "sk-syGY1idiiWF7SnHAN4zdTNH9FIirLbM0",
+      "protocol": "openai",
+      "target_model": "gpt-5.4",
+      "mapped_models": ["claude-opus-4-7"]
     }
   ]
 }

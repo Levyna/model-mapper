@@ -3,15 +3,25 @@ package main
 import (
 	"bytes"
 	_ "embed"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"log"
+	"math/big"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 //go:embed index.html
@@ -163,7 +173,68 @@ var client = &http.Client{
 	},
 }
 
+// setCorsHeaders 设置 CORS 响应头
+func setCorsHeaders(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+	w.Header().Set("Access-Control-Max-Age", "86400")
+}
+
+// handlePreflight 处理 CORS 预检请求
+func handlePreflight(w http.ResponseWriter, _ *http.Request) {
+	setCorsHeaders(w)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleModels 返回模型列表（Office 插件需要）
+func handleModels(w http.ResponseWriter, _ *http.Request) {
+	setCorsHeaders(w)
+	cfgMu.RLock()
+	defer cfgMu.RUnlock()
+
+	type ModelInfo struct {
+		ID          string `json:"id"`
+		Type        string `json:"type"`
+		DisplayName string `json:"display_name"`
+		CreatedAt   string `json:"created_at"`
+	}
+
+	models := make([]ModelInfo, 0)
+	for _, route := range cfg.Routes {
+		hostname := "unknown"
+		if u, err := url.Parse(route.UpstreamURL); err == nil {
+			hostname = u.Hostname()
+		}
+		for _, m := range route.MappedModels {
+			models = append(models, ModelInfo{
+				ID:          m,
+				Type:        "model",
+				DisplayName: fmt.Sprintf("%s (via %s)", route.TargetModel, hostname),
+				CreatedAt:   "2026-01-01T00:00:00Z",
+			})
+		}
+	}
+
+	resp := map[string]interface{}{
+		"data":      models,
+		"first_id":  "",
+		"has_more":  false,
+		"last_id":   "",
+	}
+	if len(models) > 0 {
+		resp["first_id"] = models[0].ID
+		resp["last_id"] = models[len(models)-1].ID
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(resp)
+}
+
 func proxyHandler(w http.ResponseWriter, r *http.Request) {
+	setCorsHeaders(w)
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "read body failed", http.StatusBadRequest)
@@ -178,12 +249,22 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 未匹配到任何路由，返回错误
 	if route == nil {
-		http.Error(w, "no route matched for model: "+originalModel, http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		http.Error(w, `{"error":"unknown_model","message":"no route matched for model: `+originalModel+`"}`, http.StatusBadRequest)
 		return
 	}
 
+	// Codex 用 /v1/models/responses，但中转只支持 /v1/responses
+	upstreamPath := r.URL.RequestURI()
+	if upstreamPath == "/v1/models/responses" {
+		upstreamPath = "/v1/responses"
+	}
+
 	upstreamBase := strings.TrimRight(route.UpstreamURL, "/")
-	upstreamURL := upstreamBase + r.URL.RequestURI()
+	if strings.HasSuffix(upstreamBase, "/v1") && strings.HasPrefix(upstreamPath, "/v1") {
+		upstreamBase = strings.TrimSuffix(upstreamBase, "/v1")
+	}
+	upstreamURL := upstreamBase + upstreamPath
 
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, bytes.NewReader(newBody))
 	if err != nil {
@@ -217,8 +298,12 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	// 透传响应头
-	copyHeaders(w.Header(), resp.Header)
+	// 透传响应头（过滤 CORS 头避免重复）
+	for k, vv := range resp.Header {
+		if !strings.HasPrefix(strings.ToLower(k), "access-control-") {
+			w.Header()[k] = vv
+		}
+	}
 
 	isSSE := strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream")
 	if isSSE {
@@ -255,6 +340,7 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGetConfig(w http.ResponseWriter, _ *http.Request) {
+	setCorsHeaders(w)
 	cfgMu.RLock()
 	data, _ := json.Marshal(cfg)
 	cfgMu.RUnlock()
@@ -263,6 +349,7 @@ func handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 }
 
 func handlePostConfig(w http.ResponseWriter, r *http.Request) {
+	setCorsHeaders(w)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "read body failed", http.StatusBadRequest)
@@ -281,16 +368,102 @@ func handlePostConfig(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"ok":true}`))
 }
 
+// generateSelfSignedCert 生成自签名 HTTPS 证书
+func generateSelfSignedCert(certPath, keyPath string) (tls.Certificate, error) {
+	// 检查证书是否已存在
+	if _, err := os.Stat(certPath); err == nil {
+		if _, err := os.Stat(keyPath); err == nil {
+			cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+			if err == nil {
+				return cert, nil
+			}
+		}
+	}
+
+	// 生成新证书
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	serialNumber, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			CommonName: "localhost",
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              []string{"localhost"},
+		IPAddresses:           []net.IP{{127, 0, 0, 1}},
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	// 保存证书
+	certPEM := bytes.Buffer{}
+	certPEM.Write(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}))
+
+	keyPEM := bytes.Buffer{}
+	privBytes, _ := x509.MarshalPKCS1PrivateKey(priv)
+	keyPEM.Write(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: privBytes}))
+
+	os.WriteFile(certPath, certPEM.Bytes(), 0644)
+	os.WriteFile(keyPath, keyPEM.Bytes(), 0600)
+
+	log.Printf("Generated self-signed cert: %s", certPath)
+	return tls.X509KeyPair(certPEM.Bytes(), keyPEM.Bytes())
+}
+
+func getScriptDir() string {
+	if len(os.Args) > 0 && os.Args[0] != "" {
+		dir := filepath.Dir(os.Args[0])
+		if filepath.IsAbs(dir) {
+			return dir
+		}
+	}
+	return "."
+}
+
 func main() {
 	loadConfig()
 
+	scriptDir := getScriptDir()
+	certPath := filepath.Join(scriptDir, "localhost-cert.pem")
+	keyPath := filepath.Join(scriptDir, "localhost-key.pem")
+
+	// 生成自签名证书
+	cert, err := generateSelfSignedCert(certPath, keyPath)
+	if err != nil {
+		log.Fatalf("failed to generate cert: %v", err)
+	}
+
+	// 打印路由表
+	cfgMu.RLock()
+	for i, r := range cfg.Routes {
+		log.Printf("  [%d] %v -> %s (%s)", i+1, r.MappedModels, r.TargetModel, r.UpstreamURL)
+	}
+	cfgMu.RUnlock()
+
 	mux := http.NewServeMux()
 
-	// 精确匹配根路径
+	// CORS 预检
+	mux.HandleFunc("OPTIONS /", handlePreflight)
+
+	// Web 界面
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(indexHTML)
 	})
+
+	// 模型列表（Office 插件需要）
+	mux.HandleFunc("GET /v1/models", handleModels)
 
 	// 配置 API
 	mux.HandleFunc("GET /api/config", handleGetConfig)
@@ -299,14 +472,38 @@ func main() {
 	// 代理：所有其他路径
 	mux.HandleFunc("/", proxyHandler)
 
-	addr := fmt.Sprintf(":%d", cfg.Port)
-	mapped := make([]string, 0)
-	for _, r := range cfg.Routes {
-		mapped = append(mapped, fmt.Sprintf("%s->%s", r.MappedModels, r.TargetModel))
-	}
-	log.Printf("model-mapper listening on %s  routes=%v", addr, mapped)
+	httpPort := cfg.Port
+	httpsPort := httpPort + 1
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatalf("server error: %v", err)
+	// HTTP 服务器（Claude Desktop）
+	go func() {
+		addr := fmt.Sprintf(":%d", httpPort)
+		log.Printf("HTTP server listening on %s (Claude Desktop)", addr)
+		if err := http.ListenAndServe(addr, mux); err != nil {
+			log.Fatalf("HTTP server error: %v", err)
+		}
+	}()
+
+	// HTTPS 服务器（Office 插件）
+	httpsMux := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// OPTIONS 需要特殊处理
+		if r.Method == "OPTIONS" {
+			handlePreflight(w, r)
+			return
+		}
+		// 其他请求走主处理器
+		mux.ServeHTTP(w, r)
+	})
+
+	tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
+	httpsServer := &http.Server{
+		Addr:      fmt.Sprintf(":%d", httpsPort),
+		Handler:  httpsMux,
+		TLSConfig: tlsConfig,
+	}
+
+	log.Printf("HTTPS server listening on :%d (Office 插件)", httpsPort)
+	if err := httpsServer.ListenAndServeTLS("", ""); err != nil {
+		log.Fatalf("HTTPS server error: %v", err)
 	}
 }
