@@ -1,14 +1,14 @@
 {
   "name": "model-mapper",
   "version": "1.0.0",
-  "description": "Claude 多模型代理 - 同时支持 Claude Desktop 和 Office 插件",
+  "description": "Claude 多模型代理 - 一键安装，同时支持 Claude Desktop 和 Office 插件",
   "main": "model-mapper.js",
   "bin": {
-    "model-mapper": "./bin/cli.js"
+    "model-mapper": "./bin/install.js"
   },
   "scripts": {
     "start": "node model-mapper.js",
-    "install-service": "node bin/install-service.js"
+    "install": "node bin/install.js"
   },
   "keywords": [
     "claude",
@@ -19,8 +19,5 @@
   ],
   "author": "",
   "license": "MIT",
-  "os": ["darwin", "win32", "linux"],
-  "dependencies": {
-    "chalk": "^4.1.2"
-  }
+  "os": ["darwin", "win32", "linux"]
 }

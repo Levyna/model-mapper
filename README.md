@@ -1,46 +1,74 @@
 # model-mapper
 
-Claude 多模型代理 - 一句命令安装，同时支持 Claude Desktop 和 Office 插件
+Claude 多模型代理 - 一键安装，同时支持 Claude Desktop 和 Office 插件
 
 ## 一行安装
 
 ```bash
-npm install -g model-mapper
+npm install -g git+https://github.com/Levyna/model-mapper.git
 ```
 
-## 快速配置
-
-1. 复制配置文件：
-```bash
-cp model-mapper-config.example.json model-mapper-config.json
-```
-
-2. 编辑 `model-mapper-config.json`，填入你的 API Key
-
-3. 启动服务：
-```bash
-model-mapper
-```
+安装完成后，**直接在浏览器打开 http://localhost:3000/** 配置你的 API Key！
 
 ## 效果
 
-| 应用 | 地址 | 模型 |
-|------|------|------|
-| Claude Desktop | `http://localhost:3000` | MiniMax、智谱、DeepSeek、GPT 自由切换 |
-| Word / Excel / PowerPoint | `https://localhost:3001` | 同上，Office 插件内选择 |
+| 应用 | 地址 | API Key |
+|------|------|---------|
+| Claude Desktop | `http://localhost:3000` | `dummy` |
+| Word / Excel / PowerPoint | `https://localhost:3001` | `dummy` |
 
-## 安装后台服务
+## Web 配置界面
 
-**macOS:**
+打开 http://localhost:3000/ 即可在界面上：
+- 添加/删除/修改路由
+- 填入 API Key
+- 选择协议（Anthropic / OpenAI）
+- 设置模型映射
+
+## 安装步骤
+
 ```bash
-node node_modules/model-mapper/bin/install-service.js
+# 1. 一键安装（自动创建配置、启动服务、安装后台服务）
+npm install -g git+https://github.com/Levyna/model-mapper.git
+
+# 2. 打开浏览器配置 API Key
+open http://localhost:3000/
+
+# 3. 在 Claude Desktop / Office 插件配置
+#    URL: http://localhost:3000
+#    Key: dummy
 ```
 
-**Windows (管理员):**
+## 支持的模型
+
+| 显示的模型 ID | 实际调用的上游 |
+|--------------|--------------|
+| claude-sonnet-4-5 | MiniMax-M2.7 |
+| claude-opus-4-6 | 智谱 GLM-5.1 |
+| claude-sonnet-4-6 | DeepSeek |
+| claude-opus-4-7 | GPT (中转) |
+
+## 管理命令
+
+### macOS
 ```bash
-node node_modules/model-mapper/bin/install-service.js
+# 查看状态
+launchctl list | grep model-mapper
+
+# 停止服务
+launchctl unload ~/Library/LaunchAgents/model-mapper.plist
+
+# 启动服务
+launchctl load ~/Library/LaunchAgents/model-mapper.plist
+
+# 查看日志
+cat /tmp/model-mapper.log
 ```
 
-## 完整使用指南
-
-请查看 [完整配置指南](./docs/guide.md)
+### Windows
+```cmd
+sc query model-mapper
+sc stop model-mapper
+sc start model-mapper
+sc delete model-mapper
+```
